@@ -1,0 +1,22 @@
+using Lop.Survivor.inventroy.UI;
+using System;
+using UnityEngine;
+
+[Serializable]
+public class ItemMaterial
+{
+    public string materialId = "";
+    public int materialAmount = 0;
+    public GameObject materialObj;
+
+    public void SetItemMaterial(string itemData, int count)
+    {
+        this.materialId = itemData;
+        this.materialAmount = count;
+    }
+
+    public void AddAmount(int value)
+    {
+        materialAmount += value;
+    }
+}
