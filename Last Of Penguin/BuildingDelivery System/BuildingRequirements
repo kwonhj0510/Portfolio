@@ -1,0 +1,10 @@
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+
+[CreateAssetMenu(fileName = "BuildingRequirements", menuName = "Scriptable Object/BuildingRequirements", order = int.MaxValue)]
+
+public class BuildingRequirements : ScriptableObject
+{
+    public ItemMaterial[] requirements;
+}
