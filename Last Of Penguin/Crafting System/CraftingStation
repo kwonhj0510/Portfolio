@@ -1,0 +1,656 @@
+using System.Collections;
+using System.Collections.Generic;
+using TMPro;
+using UnityEngine;
+using UnityEngine.UI;
+using Lop.Survivor.inventroy.Item;
+using static System.Windows.Forms.VisualStyles.VisualStyleElement;
+using Lop.Survivor.Event.Mission;
+
+public class CraftingStation : Station
+{
+    [Header("Combine Management")]
+    //조합 레시피와 슬롯 관리: 레시피 리스트와 슬롯 리스트, 현재 레시피 정보
+    [SerializeField] private List<Combine> combineList = new List<Combine>();
+    [SerializeField] private List<CombineSlot> combineSlotList = new List<CombineSlot>();
+    [SerializeField] private RectTransform combineParent;
+    [SerializeField] private Combine currentCombine; 
+    [SerializeField] private GameObject combineSlot;
+    [SerializeField] private GameObject selectImage;
+
+    [Header("CombineTab")]
+    //조합 탭 관련 변수 : 탭 리스트, 현재 조합 탭, 현재 탭 인덱스
+    [SerializeField] private List<GameObject> combineTab = new List<GameObject>();
+    [SerializeField] private GameObject currentCombineTab; 
+    [SerializeField] private TextMeshProUGUI combineTabNameTxt;
+    public int combineTabIndex = 0;
+
+    [Header("Crafting Progress")]
+    //제작 진행 정보: 제작 티어, 현재 슬롯 인덱스, 제작 가능한 마지막 슬롯 인덱스
+    public int craft_tier = 0;
+    public int currentSlotIndex = 0;
+    private int unlockedCombineSlotLastIndex;
+
+    [Header("Crafting Information")]
+    //현재 선택한 아이템의 제작 정보: 제작할 아이템의 스프라이트, 이름, 제작 진행 상황, 제작 비용 등
+    [SerializeField] private Image resualtItemImg; 
+    [SerializeField] private TextMeshProUGUI resualtItemNameText;
+    [SerializeField] private TextMeshProUGUI resualtItemExplanationText;
+    [SerializeField] private Image craftingGaugePanel;
+    [SerializeField] private GameObject craftInformation;
+    [SerializeField] private List<GameObject> currentMaterialBox;
+
+    [Header("Crafting Variables")]
+    //조합 및 제작 관련 변수 : 제작 시간, 제작 키 홀드 여부, 인덱스 관리
+    private float curcombineTime;
+    private float craftHoldTime;
+    private bool isKeyHold = false;
+    IEnumerator combineCorutine;
+
+    [Header("Combine Scroll and State")]
+    //조합 UI 스크롤 및 상태 관리 변수
+    [SerializeField] private ScrollRect scrollRect;
+    [SerializeField] private Scrollbar scrollbar;
+    private bool isUp;
+    public InventoryHandler inventoryHandler;
+
+    [Header("Animation")]
+    //애니메이션 관련 변수 : 완성, 제작불가 애니메이션
+    [SerializeField] private Animator completeAnimator;
+    [SerializeField] private Animator dontCraftingAnimator;
+    public bool isAnim;
+
+
+
+    protected override void Start()
+    {
+        base.Start();
+        isAnim = true;
+    }
+
+    private void Update()
+    {
+        MoveCombineTab();
+        MoveSelectSlot();
+        StartCombineItem();
+    }
+
+    #region 아이템 목록 이동
+    /// <summary>
+    /// 아이템 목록 이동
+    /// </summary>
+    private void MoveCombineTab()
+    {
+        if (craftingPanel.activeSelf && isAnim && !isKeyHold)
+        {
+            if (Input.GetKeyDown(KeyCode.S))
+            {
+                combineTabIndex--;
+                if (combineTabIndex < 0)
+                {
+                    combineTabIndex = combineTab.Count - 1;
+                }
+                currentCombineTab = combineTab[combineTabIndex];
+                currentSlotIndex = 0;
+                InitCombineTab();
+                currentCombine = combineSlotList[0].combine;
+                combineParent.GetComponent<RectTransform>().anchoredPosition = new Vector2(0f, -325f);
+
+
+                InitCraftUI();
+            }
+            if (Input.GetKeyDown(KeyCode.D))
+            {
+                combineTabIndex++;
+                if (combineTabIndex >= combineTab.Count)
+                {
+                    combineTabIndex = 0;
+                }
+                currentCombineTab = combineTab[combineTabIndex];
+                currentSlotIndex = 0;
+                InitCombineTab();
+                currentCombine = combineSlotList[0].combine;
+                combineParent.GetComponent<RectTransform>().anchoredPosition = new Vector2(0f, -325f);
+
+
+                InitCraftUI();
+            }
+        }
+
+    }
+    #endregion
+
+    #region 아이템 목록 초기화
+    public void InitCombineTab()
+    {
+        GetItemDataInInventory();
+
+        if (combineSlotList.Count > 0)
+        {
+            foreach (var btn in combineSlotList)
+            {
+                Destroy(btn.gameObject);
+            }
+            combineSlotList.Clear();
+        }
+
+        combineList.Sort((x, y) => x.order.CompareTo(y.order));
+
+        List<Combine> unlockedCombines = new List<Combine>();   //itemTier가 craftTier랑 같거나 작은 데이터 리스트
+        List<Combine> lockedCombines = new List<Combine>();     //itemTier가 craftTier보다 큰 데이터 리스트
+
+        foreach (Combine combines in combineList)
+        {
+            if (combineTabIndex == 0 || combines.combineType == (CombineType)combineTabIndex)
+            {
+                if (combines.itemTier > craft_tier)
+                {
+                    lockedCombines.Add(combines); // 잠긴 슬롯은 따로 저장
+                }
+                else
+                {
+                    unlockedCombines.Add(combines); // 잠기지 않은 슬롯 저장
+                }
+            }
+        }
+
+
+        unlockedCombineSlotLastIndex = unlockedCombines.Count;
+
+        //잠기지 않은 슬롯 데이터부터 저장 후 잠긴 슬롯 데이터 저장
+        List<Combine> sortingCombines = new List<Combine>();
+        sortingCombines.AddRange(unlockedCombines);
+        sortingCombines.AddRange(lockedCombines);
+
+        foreach (Combine combines in sortingCombines)
+        {
+            if (combineTabIndex == 0 || combines.combineType == (CombineType)combineTabIndex)
+            {
+                GameObject combineButton = Instantiate(this.combineSlot, combineParent);
+                CombineSlot combineSlot = combineButton.GetComponent<CombineSlot>();
+                combineSlot.InitBtn(combines.combineItemImg, combines.combineItemImgGray, combines);
+
+                if (combines.itemTier > craft_tier)
+                {
+                    //자물쇠 이미지 켜기
+                    combineSlot.unableToCraftImg.gameObject.SetActive(true);
+                    combineSlot.lockImg.gameObject.SetActive(true);
+                }
+
+                // 재료가 충분하지 않으면 unableToCraftImg 켜기
+                bool hasEnoughMaterials = true;
+                foreach (var material in combines.combineData)
+                {
+                    ItemMaterial foundMaterial = itemMaterialList.Find(m => m.materialId == material.materialId);
+                    if (foundMaterial == null || foundMaterial.materialAmount < material.materialAmount)
+                    {
+                        hasEnoughMaterials = false;
+                        break;
+                    }
+                }
+                if (!hasEnoughMaterials)
+                {
+                    combineSlot.unableToCraftImg.gameObject.SetActive(true);
+                }
+
+                combineSlotList.Add(combineSlot);
+            }
+        }
+        if (combineTabIndex == 0)
+        {
+            scrollRect.verticalScrollbar = scrollbar;
+            scrollbar.enabled = true;
+            scrollbar.gameObject.SetActive(true);
+        }
+        else
+        {
+            scrollRect.verticalScrollbar = null;
+            scrollbar.enabled = false;
+            scrollbar.gameObject.SetActive(false);
+        }
+        currentCombineTab = combineTab[combineTabIndex];
+        for (int i = 0; i < combineTab.Count; i++)
+        {
+            if (combineTabIndex == i)
+            {
+                combineTab[i].transform.localScale = new Vector2(1.2f, 1.2f);
+            }
+            else
+            {
+                combineTab[i].transform.localScale = Vector2.one;
+            }
+        }
+        if (currentSlotIndex == 0)
+        {
+            combineParent.GetComponent<RectTransform>().anchoredPosition = new Vector2(0f, -325f);
+            scrollbar.value = 1;
+            isUp = true;
+        }
+        currentCombine = combineSlotList[currentSlotIndex].combine;
+        MoveSelectImage(combineSlotList[currentSlotIndex]);
+    }
+
+    /// <summary>
+    /// 제작할 아이템에 따른 제작대 UI 초기화
+    /// </summary>
+    /// <param name="setItem">선택한 아이템</param>
+    public void InitCraftUI()
+    {
+        resualtItemNameText.text = currentCombine.resultItemName;
+        resualtItemExplanationText.text = currentCombine.resualtItemExplanation;
+        resualtItemImg.sprite = currentCombine.combineItemImg;
+
+        if (currentMaterialBox.Count > 0)
+        {
+            foreach (var curMtBox in currentMaterialBox)
+            {
+                Destroy(curMtBox);
+            }
+            currentMaterialBox.Clear();
+        }
+
+        foreach (var combine in currentCombine.combineData)
+        {
+            GameObject mtBox = Instantiate(combine.materialObj, combineParent.transform);
+            MaterialBox materialBox = mtBox.GetComponent<MaterialBox>();
+            materialBox.MaterialBoxSet(craftInformation, combine.materialAmount, 0);
+            currentMaterialBox.Add(mtBox);
+        }
+
+        foreach (var haveMaterial in itemMaterialList)
+        {
+            for (int i = 0; i < currentCombine.combineData.Length; i++)
+            {
+                if (haveMaterial.materialId == currentCombine.combineData[i].materialId)
+                {
+                    currentMaterialBox[i].GetComponent<MaterialBox>().MaterialBoxSet(craftInformation, currentCombine.combineData[i].materialAmount, haveMaterial.materialAmount);
+                }
+            }
+        }
+    }
+    #endregion
+
+    #region 아이템 슬롯 이동
+    private void MoveSelectSlot()
+    {
+        if (craftingPanel.activeSelf && isAnim && !isKeyHold)
+        {
+            if (Input.GetKeyDown(KeyCode.LeftArrow))
+            {
+                currentSlotIndex--;
+                if (currentSlotIndex < 0)
+                {
+                    currentSlotIndex = 0;
+                }
+                if (currentSlotIndex == 4 && !isUp)
+                {
+                    combineParent.GetComponent<RectTransform>().anchoredPosition = new Vector2(0f, -325f);
+                    scrollbar.value = 1;
+                    isUp = true;
+                }
+                currentCombine = combineSlotList[currentSlotIndex].combine;
+                InitCraftUI();
+                MoveSelectImage(combineSlotList[currentSlotIndex]);
+            }
+            if (Input.GetKeyDown(KeyCode.RightArrow))
+            {
+                currentSlotIndex++;
+                if (currentSlotIndex >= unlockedCombineSlotLastIndex)
+                {
+                    currentSlotIndex--;
+                }
+                if (currentSlotIndex == 12 && isUp)
+                {
+                    combineParent.GetComponent<RectTransform>().anchoredPosition = new Vector2(0f, -202f);
+                    scrollbar.value = 0;
+                    isUp = false;
+                }
+                currentCombine = combineSlotList[currentSlotIndex].combine;
+                InitCraftUI();
+                MoveSelectImage(combineSlotList[currentSlotIndex]);
+            }
+            if (Input.GetKeyDown(KeyCode.UpArrow))
+            {
+                currentSlotIndex -= columnCount;
+
+                if (currentSlotIndex < 0)
+                {
+                    currentSlotIndex += columnCount;
+                    //// 내 위치의 인덱스값
+                    //int iconIndex = (currentSlotIndex + columnCount) % 5;
+
+                    //// 제작할 수 있는 레시피의 마지막인덱스값
+                    //int lastIndex = unlockedCombineSlotLastIndex % 5;
+
+                    //if (lastIndex == 0)
+                    //{
+                    //    currentSlotIndex = unlockedCombineSlotLastIndex - 5 + iconIndex;
+                    //}
+                    //else if (iconIndex < lastIndex)
+                    //{
+                    //    currentSlotIndex = (unlockedCombineSlotLastIndex / 5) * 5 + iconIndex;
+                    //}
+                    //else
+                    //{
+                    //    currentSlotIndex = (unlockedCombineSlotLastIndex / 5) * 5 - 5 + iconIndex;
+                    //}
+                }
+                int nowLineIndex = currentSlotIndex / columnCount;
+                if (nowLineIndex == 0 && !isUp)
+                {
+                    combineParent.GetComponent<RectTransform>().anchoredPosition = new Vector2(0f, -325f);
+                    scrollbar.value = 1;
+                    isUp = true;
+                }
+                currentCombine = combineSlotList[currentSlotIndex].combine;
+                InitCraftUI();
+                MoveSelectImage(combineSlotList[currentSlotIndex]);
+            }
+            if (Input.GetKeyDown(KeyCode.DownArrow))
+            {
+                currentSlotIndex += columnCount;
+
+                if (currentSlotIndex > unlockedCombineSlotLastIndex - 1)
+                {
+                    currentSlotIndex -= columnCount;
+                    //int a = (currentSlotIndex - columnCount) % 5;
+                    //currentSlotIndex = a;
+                }
+
+                int nowLineIndex = currentSlotIndex / columnCount;
+                if (nowLineIndex == 3 && isUp)
+                {
+                    combineParent.GetComponent<RectTransform>().anchoredPosition = new Vector2(0f, -202f);
+                    scrollbar.value = 0;
+                    isUp = false;
+                }
+
+                currentCombine = combineSlotList[currentSlotIndex].combine;
+                InitCraftUI();
+                MoveSelectImage(combineSlotList[currentSlotIndex]);
+            }
+        }
+    }
+
+    private void MoveSelectImage(CombineSlot slot)
+    {
+        Image imageComponent = selectImage.GetComponent<Image>();
+        selectImage.transform.SetParent(slot.transform);
+        selectImage.transform.SetAsLastSibling();
+        selectImage.transform.localPosition = new Vector3(0, -5, 0);
+        selectImage.transform.localScale = Vector2.one;
+
+        if (!imageComponent.enabled)
+        {
+            imageComponent.enabled = true;
+        }
+    }
+    #endregion
+
+    #region 아이템 제작
+    private void StartCombineItem()
+    {
+        if (craftingPanel.activeSelf && isAnim)
+        {
+            if (Input.GetKeyDown(KeyCode.A))
+            {
+                if (CanCraftItem())
+                {
+                    isKeyHold = true;
+                    craftHoldTime = 0;
+
+                    combineCorutine = ComBineItem();
+                    StartCoroutine(combineCorutine);
+                }
+            }
+
+            if (Input.GetKey(KeyCode.A) && isKeyHold)
+            {
+                craftHoldTime += Time.deltaTime;
+                if (craftHoldTime > currentCombine.combineTime)
+                {
+                    isKeyHold = false;
+                }
+            }
+
+            if (Input.GetKeyUp(KeyCode.A))
+            {
+                if (isKeyHold)
+                {
+                    // 제작 시간이 부족한 경우
+                    if (craftHoldTime < currentCombine.combineTime)
+                    {
+                        StopCoroutine(combineCorutine);
+                        Debug.Log("<color=yellow>제작이 취소되었습니다.</color>");
+                        craftingGaugePanel.fillAmount = 0; // 프로그래스 바 초기화
+                    }
+                    isKeyHold = false;
+                }
+                craftHoldTime = 0;
+            }
+        }
+    }
+
+    /// <summary>
+    /// 재료가 충분한지 확인하는 함수
+    /// </summary>
+    private bool CanCraftItem()
+    {
+        foreach (var requiredMaterial in currentCombine.combineData)
+        {
+            ItemMaterial haveMaterial = itemMaterialList.Find(m => m.materialId == requiredMaterial.materialId);
+            if (haveMaterial == null || haveMaterial.materialAmount < requiredMaterial.materialAmount)
+            {
+                return false; // 재료가 부족하면 제작 불가
+            }
+        }
+        return true; // 재료가 충분하면 제작 가능
+    }
+
+    /// <summary>
+    /// 아이템 제작
+    /// </summary>
+    private IEnumerator ComBineItem()
+    {
+        // 재료가 충분한지 확인하는 로직 추가
+        bool canCraft = true;
+        bool maxInventory = true;
+
+        // 필요한 재료와 현재 소유한 재료를 비교하여 부족한 재료가 있는지 확인
+        foreach (var requiredMaterial in currentCombine.combineData)
+        {
+            ItemMaterial haveMaterial = itemMaterialList.Find(m => m.materialId == requiredMaterial.materialId);
+            if (haveMaterial == null || haveMaterial.materialAmount < requiredMaterial.materialAmount)
+            {
+                canCraft = false;
+                break; // 하나라도 부족하면 제작 불가
+            }
+        }
+
+        for (int i = 0; i < inventory.slotDatas.Count; i++)
+        {
+            if (inventory.slotDatas[i].slotItemData == null)
+            {
+                maxInventory = false;
+            }
+        }
+
+        if (canCraft && !maxInventory) // 재료가 충분할 경우에만 제작 진행
+        {
+            craftingGaugePanel.gameObject.SetActive(true);
+            curcombineTime = 0;
+            craftingGaugePanel.fillAmount = 0;
+
+            while (isKeyHold && curcombineTime < currentCombine.combineTime)
+            {
+                curcombineTime += Time.deltaTime;
+                craftingGaugePanel.fillAmount = (curcombineTime / currentCombine.combineTime);
+                yield return null;
+            }
+
+            if (craftHoldTime > currentCombine.combineTime) // 제작 완료 시간이 경과했을 때만 처리
+            {
+                // 필요한 재료들로 검사하기
+                for (int i = 0; i < currentCombine.combineData.Length; i++)
+                {
+                    ItemMaterial currentCombineData = currentCombine.combineData[i];
+
+                    // 남은 재료 차감량
+                    int remainingInventoryAmount = currentCombineData.materialAmount;
+                    int remainingToolWheelAmount = currentCombineData.materialAmount;
+
+                    // 1. Inventory에서 차감
+                    while (remainingInventoryAmount > 0)
+                    {
+                        int minSlotIndex = -1;
+                        int minItemCount = int.MaxValue;
+
+                        // 가장 적은 수량을 가진 슬롯을 찾는 과정
+                        for (int j = 0; j < inventory.slotDatas.Count; j++)
+                        {
+                            ItemData item = inventory.slotDatas[j].slotItemData;
+                            if (item != null && item.itemName == currentCombineData.materialId)
+                            {
+                                int slotItemCount = inventory.slotDatas[j].itemCount;
+
+                                if (slotItemCount > 0 && slotItemCount < minItemCount)
+                                {
+                                    minSlotIndex = j;
+                                    minItemCount = slotItemCount;
+                                }
+                            }
+                        }
+
+                        if (minSlotIndex == -1)
+                        {
+                            break; // 재료가 더 이상 없는 경우 종료
+                        }
+
+                        // 가장 적은 수량을 가진 슬롯에서 재료를 차감
+                        Lop.Survivor.inventroy.UI.InventorySlot minSlot = inventory.slotDatas[minSlotIndex];
+                        if (minSlot.itemCount > remainingInventoryAmount)
+                        {
+                            minSlot.itemCount -= remainingInventoryAmount;
+                            minSlot.countText.text = minSlot.itemCount.ToString();
+                            remainingInventoryAmount = 0; // 남은 차감량 0으로 설정
+                        }
+                        else
+                        {
+                            remainingInventoryAmount -= minSlot.itemCount;
+                            minSlot.itemCount = 0;
+                            minSlot.InitSlotItemData(null, 0);
+                            minSlot.countText.gameObject.SetActive(false);
+                            minSlot.countBackgroundImage.SetActive(false);
+                        }
+                    }
+                    // 2. ToolWheel에서 차감
+                    while (remainingToolWheelAmount > 0)
+                    {
+                        int toolMinSlotIndex = -1;
+                        int toolMinSlotCount = int.MaxValue;
+
+                        for (int j = 0; j < toolWheel.toolSlots.Count; j++)
+                        {
+                            ItemData item = toolWheel.toolSlots[j].itemData;
+                            if (item != null && item.itemName == currentCombineData.materialId)
+                            {
+                                int slotItemCount = toolWheel.toolSlots[j].slotItemCount;
+
+                                if (slotItemCount > 0 && slotItemCount < toolMinSlotCount)
+                                {
+                                    toolMinSlotCount = slotItemCount;
+                                    toolMinSlotIndex = j;
+                                }
+                            }
+                        }
+
+                        if (toolMinSlotIndex == -1)
+                        {
+                            break; // 재료가 더 이상 없는 경우 종료
+                        }
+
+                        // 가장 적은 수량을 가진 슬롯에서 재료를 차감
+                        ToolSlot toolMinSlot = toolWheel.toolSlots[toolMinSlotIndex];
+                        if (toolMinSlot.slotItemCount > remainingToolWheelAmount)
+                        {
+                            toolMinSlot.slotItemCount -= remainingToolWheelAmount;
+                            toolMinSlot.countText.text = toolMinSlot.slotItemCount.ToString();
+                            remainingToolWheelAmount = 0;
+                        }
+                        else
+                        {
+                            remainingToolWheelAmount -= toolMinSlot.slotItemCount;
+                            toolMinSlot.slotItemCount = 0;
+                            toolMinSlot.ClearSlot();
+                        }
+                    }
+
+                    // 만약 두 곳에서 모두 차감 후에도 재료가 남아 있다면 부족 경고 출력
+                    if (remainingInventoryAmount > 0 || remainingToolWheelAmount > 0)
+                    {
+                        Debug.LogWarning("재료가 부족합니다: " + currentCombineData.materialId);
+                    }
+                }
+
+                inventory.ItemToInventory(currentCombine.resultItemEngName);
+                MissionManager.Instance.EventCollect(MissionType.Make, currentCombine.resultItemEngName);
+                GameManager.Instance.craftItemCountVel++;
+                SoundManager.Instance.PlaySFX("itemMakingComplete");
+                for (int j = 0; j < currentCombine.combineData.Length; j++)
+                {
+                    MissionManager.Instance.RemoveCollectEvent(currentCombine.combineData[j].materialId, currentCombine.combineData[j].materialAmount);
+                }
+                Debug.Log("<color=green>아이템이 제작되었습니다.</color>");
+            }
+
+            craftingGaugePanel.fillAmount = 0;
+            craftingGaugePanel.gameObject.SetActive(false);
+            completeAnimator.SetTrigger("Play");
+        }
+        else if(maxInventory)
+        {
+            dontCraftingAnimator.SetTrigger("Play");
+            isKeyHold = false;
+        }
+        curcombineTime = 0;
+        InitCombineTab();
+        InitCraftUI();
+    }
+
+    #endregion
+
+    public void CraftingOn()
+    {
+        //일반 조합 UI 켜기(V키를 눌러서)
+        if (!craftingPanel.activeSelf && !inventoryPanel.activeSelf && !toolWheelPanel.activeSelf && !cookingPanel.activeSelf)
+        {
+            craft_tier = 1;
+            InitCombineTab();
+            currentCombine = combineSlotList[0].combine;
+            combineParent.GetComponent<RectTransform>().anchoredPosition = new Vector2(0f, -325f);
+
+            InitCraftUI();
+            craftingPanel.SetActive(true);
+            SoundManager.Instance.PlaySFX("UIClick");
+            inventoryHandler.currentState = InventoryHandlerState.Crafting;
+            GetComponentInParent<PenguinFunction>().MoveControllerOffFunction();
+            GetComponentInParent<PenguinBody>().UnInput(false);
+
+        }
+
+    }
+    public void CraftingOff()
+    {
+        if (craftingPanel.activeSelf && isAnim && !isKeyHold)
+        {
+            craftingPanel.SetActive(false);
+            SoundManager.Instance.PlaySFX("UIClick");
+
+            inventoryHandler.currentState = InventoryHandlerState.Default;
+            
+            combineTabIndex = 0;
+            currentSlotIndex = 0;
+            GetComponentInParent<PenguinBody>().UnInput(true);
+        }
+    }
+}
