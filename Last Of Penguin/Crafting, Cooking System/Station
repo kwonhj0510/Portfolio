@@ -1,0 +1,65 @@
+using Lop.Survivor.inventroy;
+using System.Collections.Generic;
+using UnityEngine;
+
+public class Station : MonoBehaviour
+{
+    [Header("UI Panels")]
+    [SerializeField] public GameObject craftingPanel;
+    [SerializeField] public GameObject cookingPanel;
+    [SerializeField] protected GameObject inventoryPanel;
+    [SerializeField] protected GameObject toolWheelPanel;
+
+    [Header("Inventory Data")]
+    //인벤토리 데이터 처리: 소지 재료 목록 관리
+    [SerializeField] protected Inventory inventory;
+    [SerializeField] protected ToolWheel toolWheel;
+
+    [SerializeField] protected int columnCount;
+
+    [SerializeField] protected List<ItemMaterial> itemMaterialList = new();             //가지고 있는 재료들
+
+
+    protected virtual void Start()
+    {
+        craftingPanel.SetActive(false);
+        cookingPanel.SetActive(false);
+    }
+
+    private void Update()
+    {
+        if (!GetComponentInParent<PenguinBody>().isLocalPlayer) { return; }
+    }
+
+
+    protected void GetItemDataInInventory()
+    {
+        itemMaterialList.Clear();
+        Dictionary<string, ItemMaterial> materialDict = new Dictionary<string, ItemMaterial>();
+
+        foreach (var slot in inventory.slotDatas)
+        {
+            if (slot.slotItemData == null) continue;
+
+            // 새로운 ItemMaterial 객체를 각 슬롯에 대해 생성
+            ItemMaterial itemMaterial = new ItemMaterial();
+            itemMaterial.SetItemMaterial(slot.slotItemData.itemName, slot.itemCount);
+
+            // 이미 존재하는 아이템이면 개수 추가, 그렇지 않으면 딕셔너리에 새로 추가
+            if (materialDict.TryGetValue(slot.slotItemData.itemName, out ItemMaterial inDictMaterial))
+            {
+                inDictMaterial.AddAmount(slot.itemCount);
+            }
+            else
+            {
+                materialDict.Add(slot.slotItemData.itemName, itemMaterial);
+            }
+        }
+
+        // 딕셔너리의 값들을 itemMaterialList에 추가
+        foreach (var item in materialDict.Values)
+        {
+            itemMaterialList.Add(item);
+        }
+    }
+}
