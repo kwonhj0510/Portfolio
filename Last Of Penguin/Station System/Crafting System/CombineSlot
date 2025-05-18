@@ -1,0 +1,29 @@
+using UnityEngine;
+using UnityEngine.UI;
+
+public class CombineSlot : MonoBehaviour
+{
+    public Image slotItemImg;
+    public Image unableToCraftImg;
+    public Image lockImg;
+    public GameObject combineSlot;
+    public Combine combine;
+
+    private void Awake()
+    {
+        slotItemImg = slotItemImg.GetComponent<Image>();
+    }
+
+    public void InitBtn(Sprite slotImg, Sprite unableImg, Combine combineData)
+    {
+        if (slotItemImg == null || combineSlot == null)
+        {
+            Debug.LogError("CombineButton is not initialized properly.");
+            return;
+        }
+
+        slotItemImg.sprite = slotImg;
+        unableToCraftImg.sprite = unableImg;
+        combine = combineData;        
+    }
+}
