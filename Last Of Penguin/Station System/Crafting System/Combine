@@ -1,0 +1,23 @@
+using UnityEngine;
+
+public enum CombineType
+{
+    All,
+    Equipment,
+    Building
+}
+
+[CreateAssetMenu(fileName = "CombineData", menuName = "Scriptable Object/CombineData", order = int.MaxValue)]
+public class Combine : ScriptableObject
+{
+    public ItemMaterial[] combineData;
+    public int itemTier;
+    public int order;
+    public string resultItemName;
+    public string resualtItemExplanation;
+    public string resultItemEngName;
+    public float combineTime;
+    public CombineType combineType;
+    public Sprite combineItemImg;    //제작 되는 아이템의 이미지
+    public Sprite combineItemImgGray;    //제작 되는 아이템의 이미지
+}
