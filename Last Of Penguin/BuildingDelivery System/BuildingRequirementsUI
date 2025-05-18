@@ -1,0 +1,18 @@
+using System.Collections;
+using System.Collections.Generic;
+using TMPro;
+using UnityEngine;
+using UnityEngine.UI;
+
+public class BuildingRequirementsUI : MonoBehaviour
+{
+    public Image requirementsSprite;
+    public TextMeshProUGUI requirementsText;
+    public string requirementsName;
+
+    public void RequirementsSet(GameObject parentObj, int neededMaterialCount)
+    {
+        transform.SetParent(parentObj.transform, false);
+        requirementsText.text = $"{neededMaterialCount}";
+    }
+}
