@@ -1,0 +1,66 @@
+using System;
+using UnityEngine;
+using Newtonsoft.Json;
+
+namespace Lop.Survivor.inventroy.Item
+{
+    public enum ItemType
+    {
+        Defult, //아무것도 아닌 상태
+        Block, //블록
+        Fork, //포크
+        Axe, //도끼
+        Spoon, //숟가락
+        Hammer, //망치
+        Sword, //검
+        BoxingGlove, //복싱 글로브
+        FishingRod, //낚시대
+        SlingShot, // 새총
+        Torch,
+        Scissors,
+        IceBomb,
+        Facility, //건축물
+        Food, //음식
+        Seed //씨앗
+    }
+    [Serializable]
+    public class ItemData
+    {
+        // 아이템의 기본 데이터
+        public long id;                              //재화 종류
+        public string itemName;                      //재화 이름
+        public ItemType itemType;                    //아이템 타입
+        public int itemTier;                         //아이템 티어
+        public int order;                            //정렬
+        public bool isDurability;
+        public float maxDurability;                  //최고 내구도
+        public float currentDurability;              //현재 내구도
+        public float healingValue;                        //치유
+        public float temperatureRecovery;            //온도 회복
+        public bool canMerge;                        //인벤 중첩 가능 여부
+        public int maxMerge;                         //최대 중첩 개수
+        public bool istemperatureDecrease;           //온도가 감소하는 아이템인가?
+
+        // 아이템을 표시하기 위한 데이터
+        [JsonIgnore] public GameObject itemPrefab;
+        [JsonIgnore] public GameObject itemIventoryPrefab;
+
+        public void InitData(ItemData itemData)
+        {
+            id = itemData.id;
+            itemName = itemData.itemName;
+            itemType = itemData.itemType;
+            itemTier = itemData.itemTier;
+            canMerge = itemData.canMerge;
+            maxMerge = itemData.maxMerge;
+            isDurability = itemData.isDurability;
+            order = itemData.order;
+            itemType = itemData.itemType;
+            maxDurability = itemData.maxDurability;
+            currentDurability = itemData.currentDurability;
+            healingValue = itemData.healingValue;
+            temperatureRecovery = itemData.temperatureRecovery;
+            istemperatureDecrease = itemData.istemperatureDecrease;
+        }
+    }
+}
