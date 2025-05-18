@@ -1,0 +1,676 @@
+using Lop.Survivor.inventroy;
+using Lop.Survivor.inventroy.Item;
+using Lop.Survivor.inventroy.UI;
+using System.Collections.Generic;
+using UnityEngine;
+
+using Mirror;
+using Lop.Survivor.Event.Mission;
+
+namespace Lop.Survivor.Island.Buildingbase
+{
+    public class BuildingDelivery : NetworkBehaviour
+    {
+        [SerializeField] private List<ItemMaterial> itemMaterialList = new();             //가지고 있는 재료들
+        [SerializeField] private List<ItemMaterial> remainingRequirements;
+        private Vector3 boxSize;
+
+        [Header("Unity")]
+        [Space(5f)]
+        [SerializeField] private Animator animator;
+        [SerializeField] private BoxCollider boxCollider;
+        [SerializeField] private Transform centerPosition;
+        [SerializeField] Material changeMaterial;
+        [SerializeField] private SkinnedMeshRenderer skinnedMesh;
+
+        [Header("GameObject")]
+        [Space(5f)]
+        [SerializeField] private GameObject ggongGgongPrefab;                 //꽁꽁 프리펩
+        [SerializeField] private GameObject UISpawnPosition;                  //UI가 뜨는 위치
+
+        [Header("bool")]
+        [Space(5f)]
+        private bool isIcekeeperNearby = false;
+        private bool isOnUI = false;
+        private bool isUIActive = false;
+
+
+        [Header("enum")]
+        [Space(5f)]
+        [SerializeField] public activation activationType = activation.Deactivate;     //예시로 1은 꽁꽁이 장치 사진, 2부터는 필요한 아이템 띄우기
+        public enum activation                            //활성화 상태 확인
+        {
+            Deactivate,
+            NeedItem,
+            Activation,
+        }
+
+        [Header("float")]
+        [Space(5f)]
+        private float spacing = 2.0f; //UI 간의 간격
+
+        [Header("string")]
+        [Space(5f)]
+        public string buildingName;
+        private string deactivateAnimation = "Deactivate";   //애니메이션 이름
+        private string ggongGgongTag = "GgongGgong";         //꽁꽁이 장치 찾기
+        private string playerTag = "Player";                 //플레이어 찾기
+
+        [Header("Scripts")]
+        [Space(5f)]
+        [SerializeField] private BuildingRequirements buildingRequirements;   //건축물마다 필요한 자원
+        private BuildingRequirementsUI brUI;        //납품 UI
+
+
+        void Start()
+        {
+            boxSize = new Vector3(boxCollider.size.x, boxCollider.size.y, boxCollider.size.z);
+            activationType = activation.Deactivate;
+            animator.SetBool(deactivateAnimation, true);
+        }
+
+        private void Update()
+        {
+            ChangeActivation();
+            CheckPlayer();
+            if (!isIcekeeperNearby)
+            {
+                FindIcekeeper();
+            }
+        }
+
+        private void ChangeActivation()
+        {
+            switch (activationType)
+            {
+                //꽁꽁이 장치 필요
+                case activation.Deactivate:
+                    break;
+                //활성화 아이템 필요
+                //장치 활성화 미션이 이거랑 같이 실행
+                case activation.NeedItem:
+                    // MissionManager.Instance.EventCollect(MissionType.InstallationVitalize, buildingName);
+                    break;
+                //아무것도 안하고 애니메이션 실행만 됨
+                //납품 완료 미션 호출하기
+                case activation.Activation:
+                    // MissionManager.Instance.EventCollect(MissionType.Deliver, buildingName);
+                    AnimationOn();
+                    break;
+            }
+        }
+        private void AnimationOn()
+        {
+            skinnedMesh.material = changeMaterial;
+            animator.SetBool(deactivateAnimation, false);
+        }
+
+        private void CheckPlayer()
+        {
+            Collider[] hitColliders = Physics.OverlapBox(new Vector3(transform.position.x + 1, transform.position.y, transform.position.z + 1), boxSize / 2, Quaternion.identity);
+            bool playerInRange = false; // 플레이어가 범위 내에 있는지 확인할 변수
+            foreach (var collider in hitColliders)
+            {
+                if (collider.CompareTag(playerTag))
+                {
+
+                    if (activationType == activation.Deactivate)
+                    {
+                        if (!isOnUI)
+                        {
+                            OpenUIGgongGgong();
+                        }
+                    }
+                    else if (activationType == activation.NeedItem)
+                    {
+                        if (!isOnUI)
+                        {
+                            OpenUI();
+                        }
+                    }
+                    return;
+                }
+            }
+            // 플레이어가 범위를 벗어난 경우 UI 닫기
+            if (!playerInRange)
+            {
+                CloseUI(); // UI 닫기
+                isOnUI = false; // UI가 닫혔으므로 상태 업데이트
+            }
+        }
+
+        #region 꽁꽁이 장치 찾기
+        //private void OnDrawGizmos()
+        //{
+        //    Gizmos.color = Color.blue;
+        //    Gizmos.DrawWireCube(centerPosition.position, boxSize / 6);
+        //}
+
+        private void FindIcekeeper()
+        {
+            Collider[] hitColliders = Physics.OverlapBox(centerPosition.position, boxSize / 6, Quaternion.identity);
+            foreach (var collider in hitColliders)
+            {
+                if (collider.CompareTag(ggongGgongTag))
+                {
+                    Debug.Log("엥");
+                    foreach (Canvas canvas in UISpawnPosition.GetComponentsInChildren<Canvas>(true))
+                    {
+                        Destroy(canvas.gameObject);
+                    }
+                    activationType = activation.NeedItem;
+                    MissionManager.Instance.EventCollect(MissionType.InstallationVitalize, buildingName);
+                    isOnUI = false;
+                    isUIActive = false;
+                    isIcekeeperNearby = true;
+                    return;
+                }
+            }
+            activationType = activation.Deactivate;
+        }
+        #endregion
+
+        #region UI 띄우기
+        /// <summary>
+        /// 재료 부족 UI 띄우기
+        /// </summary>
+        private void OpenUI()
+        {
+            // 이미 UI가 활성화되어 있는 경우, 다시 활성화만 하고 리턴
+            if (isUIActive)
+            {
+                foreach (Transform child in UISpawnPosition.transform)
+                {
+                    child.gameObject.SetActive(true);
+                }
+                return;
+            }
+
+            if (!isUIActive)
+            {
+                // UI가 활성화되지 않았다면 새로 생성
+                List<GameObject> spawnedObjects = new List<GameObject>();
+
+                foreach (var requirements in buildingRequirements.requirements)
+                {
+                    GameObject reObj = Instantiate(requirements.materialObj, transform.position, Quaternion.identity);
+                    BuildingRequirementsUI requirementsUI = reObj.GetComponent<BuildingRequirementsUI>();
+                    requirementsUI.RequirementsSet(UISpawnPosition, requirements.materialAmount);
+                    spawnedObjects.Add(requirementsUI.gameObject);
+                }
+
+                // 자식 오브젝트 정렬
+                ArrangeChildObjects(spawnedObjects);
+            }
+
+            isOnUI = true;
+            isUIActive = true; // UI가 활성화된 상태로 설정
+        }
+
+        /// <summary>
+        /// 꽁꽁이 장치 부족 UI 띄우기
+        /// </summary>
+        private void OpenUIGgongGgong()
+        {
+            // 이미 UI가 활성화되어 있는 경우, 다시 활성화만 하고 리턴
+            if (isUIActive)
+            {
+                foreach (Transform child in UISpawnPosition.transform)
+                {
+                    child.gameObject.SetActive(true);
+                }
+                return;
+            }
+            if (!isUIActive)
+            {
+                // UI가 활성화되지 않았다면 새로 생성
+                List<GameObject> spawnedObjects = new List<GameObject>();
+
+                GameObject reObj = Instantiate(ggongGgongPrefab, transform.position, Quaternion.identity);
+                BuildingRequirementsUI requirementsUI = reObj.GetComponent<BuildingRequirementsUI>();
+                requirementsUI.RequirementsSet(UISpawnPosition, 1);
+                requirementsUI.gameObject.transform.localPosition = Vector3.zero;
+            }
+
+            isOnUI = true;
+            isUIActive = true; // UI가 활성화된 상태로 설정
+        }
+
+        /// <summary>
+        /// UI 정렬
+        /// </summary>
+        /// <param name="objects"></param>
+        void ArrangeChildObjects(List<GameObject> objects)
+        {
+            int count = objects.Count;
+
+            for (int i = 0; i < count; i++)
+            {
+                // 중앙 정렬된 대칭 배치
+                float positionX = (i - (count - 1) / 2.0f) * spacing;
+                objects[i].transform.localPosition = new Vector3(positionX, 0, 0); // 부모 위치를 기준으로 x축 배치
+            }
+        }
+        #endregion
+
+        #region UI 비활성화
+        private void CloseUI()
+        {
+            foreach (Transform child in UISpawnPosition.transform)
+            {
+                if (child != null)
+                {
+                    child.gameObject.SetActive(false); // 모든 자식 UI 오브젝트 비활성화
+                }
+            }
+        }
+        #endregion
+
+        private void FindPenguinInventory() //납품 버튼 눌렀을 때 실행
+        {
+            GameObject penguin = LopNetworkManager.GetPlayer(); // 로컬 플레이어 오브젝트 찾기
+            if (penguin != null)
+            {
+                inventroy.Inventory inventory = penguin.GetComponentInChildren<inventroy.Inventory>(); // 인벤토리 컴포넌트 가져오기
+                ToolWheel toolWheel = penguin.GetComponentInChildren<ToolWheel>(); // 툴휠 컴포넌트 가져오기
+                if (inventory != null && toolWheel != null)
+                {
+                    GetItemDataInInventory(inventory);
+                    DeductMaterials(inventory, toolWheel, 0);
+                }
+            }
+        }
+
+        private void GetItemDataInInventory(inventroy.Inventory inventory)
+        {
+            itemMaterialList.Clear();
+            Dictionary<string, ItemMaterial> materialDict = new Dictionary<string, ItemMaterial>();
+
+            foreach (var slot in inventory.slotDatas)
+            {
+                if (slot.slotItemData == null) continue;
+
+                // 새로운 ItemMaterial 객체를 각 슬롯에 대해 생성
+                ItemMaterial itemMaterial = new ItemMaterial();
+                itemMaterial.SetItemMaterial(slot.slotItemData.itemName, slot.itemCount);
+
+                // 이미 존재하는 아이템이면 개수 추가, 그렇지 않으면 딕셔너리에 새로 추가
+                if (materialDict.TryGetValue(slot.slotItemData.itemName, out ItemMaterial inDictMaterial))
+                {
+                    inDictMaterial.AddAmount(slot.itemCount);
+                }
+                else
+                {
+                    materialDict.Add(slot.slotItemData.itemName, itemMaterial);
+                }
+            }
+
+            // 딕셔너리의 값들을 itemMaterialList에 추가
+            foreach (var item in materialDict.Values)
+            {
+                itemMaterialList.Add(item);
+            }
+        }
+
+        // 최초 납품을 시작할 때 remainingRequirements를 초기화하는 함수
+        void InitializeRemainingRequirements()
+        {
+            // 납품 상태가 없으면 초기화
+            if (remainingRequirements.Count == 0)
+            {
+                remainingRequirements = new List<ItemMaterial>();
+                foreach (var requiredMaterial in buildingRequirements.requirements)
+                {
+                    remainingRequirements.Add(new ItemMaterial
+                    {
+                        materialId = requiredMaterial.materialId,
+                        materialAmount = requiredMaterial.materialAmount
+                    });
+                }
+            }
+        }
+
+        private void DeductMaterials(inventroy.Inventory inventory, ToolWheel toolWheel, int remainingInventoryAmount)
+        {
+            InitializeRemainingRequirements();
+
+            // 필요한 재료와 현재 소유한 재료를 비교하여 하나라도 동일한 재료가 있는지 확인
+            bool canDeliver = false;  // 기본값을 false로 설정
+
+            // 필요한 재료와 현재 소유한 재료를 비교하여 하나라도 동일한 재료가 있는지 확인
+            foreach (var requiredMaterial in remainingRequirements)
+            {
+                ItemMaterial haveMaterial = itemMaterialList.Find(m => m.materialId == requiredMaterial.materialId);
+
+                // 하나라도 같은 materialId가 있으면 제작 가능으로 설정하고 반복문 종료
+                if (haveMaterial != null)
+                {
+                    canDeliver = true;
+                    break;
+                }
+            }
+
+            if (canDeliver)
+            {
+                for (int i = 0; i < remainingRequirements.Count; i++)
+                {
+                    ItemMaterial currentRequirement = remainingRequirements[i];
+
+                    // 남은 재료 차감량
+                    remainingInventoryAmount = currentRequirement.materialAmount;
+                    int remainingToolWheelAmount = currentRequirement.materialAmount;
+
+                    // 인벤토리에서 차감하기
+                    while (remainingInventoryAmount > 0)
+                    {
+                        int minSlotIndex = -1;
+                        int minItemCount = int.MaxValue;
+
+                        // 가장 적은 수량을 가진 슬롯을 찾기
+                        for (int j = 0; j < inventory.slotDatas.Count; j++)
+                        {
+                            ItemData item = inventory.slotDatas[j].slotItemData;
+                            if (item != null && item.itemName == currentRequirement.materialId)
+                            {
+                                int slotItemCount = inventory.slotDatas[j].itemCount;
+
+                                // 현재 가장 적은 수량을 가진 슬롯을 찾는 조건
+                                if (slotItemCount > 0 && slotItemCount < minItemCount)
+                                {
+                                    minSlotIndex = j;
+                                    minItemCount = slotItemCount;
+                                }
+                            }
+                        }
+
+                        // 남은 아이템이 없거나 찾은 슬롯이 없으면 중단
+                        if (minSlotIndex == -1) break;
+
+                        // 찾은 슬롯에서 재료 차감 (차감할 양은 remainingAmount와 슬롯의 남은 수량 중 작은 값)
+                        InventorySlot slot = inventory.slotDatas[minSlotIndex];
+
+                        if (remainingInventoryAmount >= slot.itemCount)
+                        {
+                            remainingInventoryAmount -= slot.itemCount;
+                            slot.itemCount -= slot.itemCount;
+
+                            slot.countText.text = slot.itemCount.ToString();
+                            if (slot.itemCount == 0)
+                            {
+                                slot.InitSlotItemData(null, 0);
+                                slot.countText.gameObject.SetActive(false);
+                                slot.countBackgroundImage.SetActive(false);
+                            }
+
+                        }
+                        else
+                        {
+                            slot.itemCount -= remainingInventoryAmount;
+                            remainingInventoryAmount -= remainingInventoryAmount;
+
+                            slot.countText.text = slot.itemCount.ToString();
+                        }
+
+                        // UI 업데이트
+                        foreach (Transform childTransform in UISpawnPosition.transform)
+                        {
+                            GameObject child = childTransform.gameObject;
+                            brUI = child.GetComponent<BuildingRequirementsUI>();
+
+                            // 현재 자식의 ID가 납품해야 할 materialId와 같은지 확인
+                            if (brUI != null && brUI.requirementsName == currentRequirement.materialId)
+                            {
+                                if (remainingInventoryAmount <= 0)
+                                {
+                                    Destroy(child);
+                                }
+                                else
+                                {
+                                    brUI.requirementsText.text = remainingInventoryAmount.ToString();
+                                }
+
+                                // 찾았으므로 루프를 종료
+                                break;
+                            }
+                        }
+
+
+                        currentRequirement.materialAmount = remainingInventoryAmount;
+                        // 남은 재료가 0이 되면 currentRequirement의 재료 수량을 갱신하고 루프 종료
+                        if (remainingInventoryAmount == 0)
+                        {
+                            Debug.Log("끝");
+                            break;
+                        }
+                    }
+
+                    // 툴휠에서 차감하기
+                    while (remainingToolWheelAmount > 0)
+                    {
+                        int minSlotIndex = -1;
+                        int minItemCount = int.MaxValue;
+
+                        // 가장 적은 수량을 가진 슬롯을 찾기
+                        for (int j = 0; j < toolWheel.toolSlots.Count; j++)
+                        {
+                            ItemData item = toolWheel.toolSlots[j].itemData;
+                            if (item != null && item.itemName == currentRequirement.materialId)
+                            {
+                                int slotItemCount = toolWheel.toolSlots[j].slotItemCount;
+
+                                // 현재 가장 적은 수량을 가진 슬롯을 찾는 조건
+                                if (slotItemCount > 0 && slotItemCount < minItemCount)
+                                {
+                                    minSlotIndex = j;
+                                    minItemCount = slotItemCount;
+                                }
+                            }
+                        }
+
+                        // 남은 아이템이 없거나 찾은 슬롯이 없으면 중단
+                        if (minSlotIndex == -1) break;
+
+                        // 찾은 슬롯에서 재료 차감 (차감할 양은 remainingAmount와 슬롯의 남은 수량 중 작은 값)
+                        ToolSlot slot = toolWheel.toolSlots[minSlotIndex];
+
+                        if (remainingInventoryAmount >= slot.slotItemCount)
+                        {
+                            remainingInventoryAmount -= slot.slotItemCount;
+                            slot.slotItemCount -= slot.slotItemCount;
+
+                            slot.countText.text = slot.slotItemCount.ToString();
+                            if (slot.slotItemCount == 0)
+                            {
+                                slot.ClearSlot();
+                            }
+
+                        }
+                        else
+                        {
+                            slot.slotItemCount -= remainingInventoryAmount;
+                            remainingInventoryAmount -= remainingInventoryAmount;
+
+                            slot.countText.text = slot.slotItemCount.ToString();
+                        }
+
+                        currentRequirement.materialAmount = remainingInventoryAmount;
+                        // 남은 재료가 0이 되면 currentRequirement의 재료 수량을 갱신하고 루프 종료
+                        if (remainingInventoryAmount == 0) break;
+                    }
+                    if (AreAllMaterialsDepleted())
+                    {
+                        this.gameObject.layer = 9;
+                        activationType = activation.Activation;
+                        MissionManager.Instance.EventCollect(MissionType.Deliver, buildingName);
+                        Effect.EffectManager.Instance.PlayEffect("CFXR Magic Poof", string.Empty, transform.position + new Vector3(0, 2, 0));
+                        //Debug.Log("모든 재료가 소진되었습니다. 실행");
+                    }
+                }
+
+                SendMissionBuildingMessage();
+            }
+        }
+
+        // 모든 remainingRequirements의 재료 수량이 0인지 확인하는 함수
+        private bool AreAllMaterialsDepleted()
+        {
+            foreach (var requirement in remainingRequirements)
+            {
+                if (requirement.materialAmount > 0)
+                {
+                    return false; // 하나라도 0이 아니면 false 반환
+                }
+            }
+            return true; // 모든 재료가 0이면 true 반환
+        }
+
+        public void DeliverItem()
+        {
+            FindPenguinInventory();
+        }
+
+        #region 네트워크
+        public override void OnStartServer()
+        {
+            base.OnStartServer();
+
+            NetworkServer.ReplaceHandler<MissionBuildingReadyMessage>(SendToNewClientMissionBuildingMessage);
+            NetworkServer.ReplaceHandler<MissionBuildingMessage>(UpdateMissionBuildingMessage);
+        }
+
+        public override void OnStartClient()
+        {
+            base.OnStartClient();
+
+            // if(isServer) { return; }
+
+            NetworkClient.ReplaceHandler<MissionBuildingMessage>(ReceiveMissionBuildingMessage);
+            if (isClientOnly)
+            {
+                NetworkClient.Send(new MissionBuildingReadyMessage());
+            }
+
+        }
+
+        private void SendMissionBuildingMessage()
+        {
+            List<string> itemIds = new List<string>();
+            List<int> itemAmounts = new List<int>();
+
+            foreach (ItemMaterial remainingRequirement in remainingRequirements)
+            {
+                itemIds.Add(remainingRequirement.materialId);
+                itemAmounts.Add(remainingRequirement.materialAmount);
+            }
+
+            MissionBuildingMessage message = new MissionBuildingMessage
+            {
+                itemIdList = itemIds,
+                itemAmountList = itemAmounts
+            };
+
+            NetworkClient.Send(message);
+        }
+        private void SendToNewClientMissionBuildingMessage(NetworkConnection conn, MissionBuildingReadyMessage msg)
+        {
+            if (remainingRequirements.Count == 0) { return; }
+
+            List<string> itemIds = new List<string>();
+            List<int> itemAmounts = new List<int>();
+
+            foreach (ItemMaterial remainingRequirement in remainingRequirements)
+            {
+                itemIds.Add(remainingRequirement.materialId);
+                itemAmounts.Add(remainingRequirement.materialAmount);
+            }
+
+            MissionBuildingMessage message = new MissionBuildingMessage
+            {
+                itemIdList = itemIds,
+                itemAmountList = itemAmounts
+            };
+
+            conn.Send(message);
+        }
+
+        private void UpdateMissionBuildingMessage(NetworkConnection sender, MissionBuildingMessage message)
+        {
+            UpdateDelivery(message.itemIdList, message.itemAmountList);
+
+            foreach (var conn in NetworkServer.connections.Values)
+            {
+                if (conn != sender)
+                {
+                    conn.Send(message);
+                }
+            }
+        }
+
+        private void ReceiveMissionBuildingMessage(MissionBuildingMessage message)
+        {
+            if (isServer) { return; }
+
+            UpdateDelivery(message.itemIdList, message.itemAmountList);
+        }
+
+        private void UpdateDelivery(List<string> itemIdList, List<int> itemAmountList)
+        {
+            InitializeRemainingRequirements();
+
+            for (int i = 0; i < itemIdList.Count; i++)
+            {
+                Debug.Log($"UpdateDelivery, itemIdList: {itemIdList[i]}, itemAmountList: {itemAmountList[i]}");
+            }
+
+            foreach (ItemMaterial remainingRequirement in remainingRequirements)
+            {
+                for(int i = 0; i < itemIdList.Count; i++)
+                {
+                    if (remainingRequirement.materialId == itemIdList[i])
+                    {
+                        remainingRequirement.materialAmount = itemAmountList[i];
+                    }
+                }
+            }
+
+            // UI 업데이트
+            foreach (Transform childTransform in UISpawnPosition.transform)
+            {
+                GameObject child = childTransform.gameObject;
+                brUI = child.GetComponent<BuildingRequirementsUI>();
+
+                for(int i = 0; i < remainingRequirements.Count; i++)
+                {
+                    if(brUI.requirementsName == remainingRequirements[i].materialId)
+                    {
+                        if (remainingRequirements[i].materialAmount <= 0)
+                        {
+                            Destroy(child);
+                        }
+                        else
+                        {
+                            brUI.requirementsText.text = itemAmountList[i].ToString();
+                        }
+                    }
+                }
+            }
+
+            if (AreAllMaterialsDepleted())
+            {
+                this.gameObject.layer = 9;
+                activationType = activation.Activation;
+                //InGameEffectManager.Instance.PlayEffect("CFXR Magic Poof", string.Empty, transform.position + new Vector3(0, 1, 0));
+            }
+        }
+
+        public struct MissionBuildingMessage : NetworkMessage
+        {
+            public List<string> itemIdList;
+            public List<int> itemAmountList;
+        }
+
+        public struct MissionBuildingReadyMessage : NetworkMessage { }
+        #endregion
+    }
+}
+
