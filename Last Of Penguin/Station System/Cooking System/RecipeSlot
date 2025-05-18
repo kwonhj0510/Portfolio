@@ -1,0 +1,28 @@
+using UnityEngine;
+using UnityEngine.UI;
+
+public class RecipeSlot : MonoBehaviour
+{
+    public Image slotItemImage;
+    public Image unableToCraftImage;
+    public Image lockImage;
+    public GameObject recipeSlot;
+    public Recipe recipe;
+
+    private void Awake()
+    {
+        slotItemImage = slotItemImage.GetComponent<Image>();
+    }
+    
+    public void InitSlot(Sprite slotImg,Sprite unableImg, Recipe recipeData)
+    {
+        if (slotItemImage == null || recipeSlot == null)
+        {
+            return;
+        }
+
+        slotItemImage.sprite = slotImg;
+        unableToCraftImage.sprite = unableImg;
+        recipe = recipeData;
+    }
+}
